@@ -32,6 +32,12 @@ def coslaw(a,b,c):
     return np.arccos((a*a+b*b-c*c) / (2*a*b))
 
 def cxc(r1,c2,r2):
+    """
+    Intersection of two circles,
+    First Circle located at origin with radius r1,
+    Second Circle located at c2=(x2,y2) with radius r2.
+    returns None if the circles do not intersect.
+    """
     x,y = c2
     r11 = r1*r1
     r22 = r2*r2
@@ -83,7 +89,7 @@ class KUKAKin(object):
         print('Applying Final Correction ...')
         T_cor = self.dh2URDF()
         self._T = self._T*T_cor
-        self._T02 = self._T_par[0] * self._T_par[1] #0->2
+        self._T02 = self._T_par[0] * self._T_par[1]*T_cor #0->2
 
         # Variables
         self._q = symbols('q1:7')
@@ -94,11 +100,13 @@ class KUKAKin(object):
         #print M[:, 3]
 
     @staticmethod
-    def dh2URDF():
+    def dh2URDF(R=False):
         """ Correction from DH-URDF """
         Rz = rmat('z', np.pi)
         Ry = rmat('y', -np.pi)
         Rc = simplify(Rz*Ry)
+        if R:
+            return Rc
         T = Rc.row_join(Matrix([0,0,0])).col_join(Matrix([[0,0,0,1]]))
         return T
 
@@ -127,22 +135,41 @@ class KUKAKin(object):
     def IK(self, pos, rot):
         #d6 = 
         # inverse position ...
-        x,y,z = pos
+        #x,y,z = pos
+        r,p,y = rot
 
         # compute wrist position ...
         # wx = x - (d6+l)*nx ...
-        wpos = pos
+        Rrpy = rmat('z',y) * rmat('y',p) * rmat('x',r) * self.dh2URDF(R=True)
+        print 'rrpy', Rrpy
+        print Rrpy * Matrix([0,0,1]) #z-vec rot.
 
-        q1 = np.arctan2(y,x)
+        n0 = np.asarray(Rrpy[:, 0]).astype(np.float32)
+        n1 = np.asarray(Rrpy[:, 1]).astype(np.float32)
+        n = np.asarray(Rrpy[:, 2]).astype(np.float32)
+        #n = np.asarray([1,0,0], dtype=np.float32)
+
+        d6 = 0.0
+        l = 0.303
+        wpos = np.subtract(pos, (d6 + l)*n0.ravel()) # NOT [:,2]??
+        #wpos1 = np.subtract(pos, (d6 + l)*n1.ravel())
+        #wpos2 = np.subtract(pos, (d6 + l)*n.ravel())
+        print 'wpos', wpos
+
+        q1 = np.arctan2(wpos[1],wpos[0])
         p2 = self._T02.subs({symbols('q1'):q1})[:3,3]
-        p2 = (float(p2[0]), float(p2[1]), float(p2[2])) # just in case it doesn't work
+        print 'p2', p2
+        # convert to float; TODO: better way?
+        p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
 
         dx, dy, dz = np.subtract(wpos, p2)
+        print 'dz', dz
         # don't want to care abt projections
         dr = np.sqrt(float(dx*dx)+float(dy*dy))
 
+        # TODO : avoid hardcoding constants
         r_c = 1.25 #a2
-        r_a = 1.50 #d4
+        r_a = np.sqrt(1.50**2 + 0.054**2) #d4
 
         p3s = cxc(r_c, [dr,dz], r_a) #wx-py2, wz-py2?
 
@@ -152,12 +179,15 @@ class KUKAKin(object):
 
         # set preference - elbow up
         if p3s[0][1] > p3s[1][1]:
-            p3 = p3s[0]
-        else:
             p3 = p3s[1]
+        else:
+            p3 = p3s[0]
+
+        print 'delta', dr, dz
+        print 'p3', p3
 
         q2 = np.arctan2(p3[0], p3[1])
-        q3 = np.arctan2(dz-p3[1], dr-p3[0])
+        q3 = np.arctan2(p3[1]-dz, dr-p3[0]) - 0.03619
 
         # inverse rotation ...
         #r,p,y = rot
@@ -168,8 +198,14 @@ def main():
     kin = KUKAKin()
     #print kin.FK([0,0,0,0,0,0])
     #print kin.IK([1.498, 0.0, 1.160], [0,0,0])
-    q1, q2, q3 = kin.IK([1.768, 0.434, 1.944], [0,0,0])[:3]
-    print kin.FK([q1, q2, q3, 0,0,0])
+    #q1, q2, q3 = kin.IK([2.153, 0, 1.947], [0, 0, 0.0])[:3]
+    q1, q2, q3 = kin.IK([-1.001, -0.728, 1.479], [-0.740, -0.367, -1.894])[:3]
+    print 'q1-q2-q3', q1,q2,q3
+
+    #t = np.array(kin.FK([q1, q2, q3, 0, 0, 0])[:3,3]).astype(np.float32)
+    #t = t.ravel()
+    #q1, q2, q3 = kin.IK(t, [0,0,0])[:3]
+    #print 'q1-q2-q3', q1,q2,q3
 
 if __name__ == "__main__":
     main()
