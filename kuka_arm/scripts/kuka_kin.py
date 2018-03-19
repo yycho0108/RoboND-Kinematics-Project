@@ -1,9 +1,15 @@
 #!/usr/bin/env python
-# Handles KUKA Kinematics.
+"""
+Handles KUKA Kinematics.
+Authored by Yoonyoung Cho @ 03.19.2018
+"""
+
 import tf
 from mpmath import *
 from sympy import *
 import numpy as np
+from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def rmat(axis, angle):
     """ 3x3 Rotation Matrix from Axis{x,y,z} + Angle(rad) """
@@ -29,6 +35,7 @@ def rmat(axis, angle):
     return None
 
 def coslaw(a,b,c):
+    """ Cosine Law """
     return np.arccos((a*a+b*b-c*c) / (2*a*b))
 
 def cxc(r1,c2,r2):
@@ -52,6 +59,10 @@ def cxc(r1,c2,r2):
     return c+d, c-d
 
 class KUKAKin(object):
+    """
+    Forward & Inverse Kinematics
+    for KUKA KR210 6DOF Robot Arm.
+    """
     def __init__(self):
 
         # DH Parameters
@@ -89,7 +100,8 @@ class KUKAKin(object):
         print('Applying Final Correction ...')
         T_cor = self.dh2URDF()
         self._T = self._T*T_cor
-        self._T02 = self._T_par[0] * self._T_par[1]*T_cor #0->2
+        self._T02 = self._T_par[0] * self._T_par[1] #0->2
+        self._R03 = (self._T02 * self._T_par[2])[:3,:3]
 
         # Variables
         self._q = symbols('q1:7')
@@ -103,7 +115,7 @@ class KUKAKin(object):
     def dh2URDF(R=False):
         """ Correction from DH-URDF """
         Rz = rmat('z', np.pi)
-        Ry = rmat('y', -np.pi)
+        Ry = rmat('y', -np.pi/2)
         Rc = simplify(Rz*Ry)
         if R:
             return Rc
@@ -126,86 +138,119 @@ class KUKAKin(object):
             ])
         return T
 
-    def getDH(self, i):
+    @staticmethod
+    def getDH(i):
+        """ Yield DH Parameters for a joint at index i."""
         return symbols('alpha{0}, a{0}, d{1}, q{1}'.format(i, i+1))
 
     def FK(self, q):
-        return self._T.subs({k:v for (k,v) in zip(self._q, q)})
+        """ Compute Forward Kinematics """
+        # TODO : support homogeneous -> trans, rot (by option)
+        T = self._T.subs({k:v for (k,v) in zip(self._q, q)})
+        T = np.array(T).astype(np.float32)
+        pos = tf.transformations.translation_from_matrix(T)
+        rot = tf.transformations.euler_from_matrix(T)
+        return pos, rot
 
     def IK(self, pos, rot):
-        #d6 = 
+        """ Compute Inverse Kinematics """
+
         # inverse position ...
-        #x,y,z = pos
-        r,p,y = rot
 
         # compute wrist position ...
-        # wx = x - (d6+l)*nx ...
+        r, p, y = rot
         Rrpy = rmat('z',y) * rmat('y',p) * rmat('x',r) * self.dh2URDF(R=True)
-        print 'rrpy', Rrpy
-        print Rrpy * Matrix([0,0,1]) #z-vec rot.
-
-        n0 = np.asarray(Rrpy[:, 0]).astype(np.float32)
-        n1 = np.asarray(Rrpy[:, 1]).astype(np.float32)
-        n = np.asarray(Rrpy[:, 2]).astype(np.float32)
-        #n = np.asarray([1,0,0], dtype=np.float32)
+        n = np.asarray(Rrpy[:, 2]).astype(np.float32) # normal
 
         d6 = 0.0
         l = 0.303
-        wpos = np.subtract(pos, (d6 + l)*n0.ravel()) # NOT [:,2]??
-        #wpos1 = np.subtract(pos, (d6 + l)*n1.ravel())
-        #wpos2 = np.subtract(pos, (d6 + l)*n.ravel())
-        print 'wpos', wpos
+        wpos = np.subtract(pos, (d6 + l)*n.ravel())
+        #print 'wpos', wpos
 
-        q1 = np.arctan2(wpos[1],wpos[0])
-        p2 = self._T02.subs({symbols('q1'):q1})[:3,3]
-        print 'p2', p2
+        q1 = np.arctan2(wpos[1], wpos[0])
+        p2 = self._T02.subs({'q1':q1})[:3,3]
         # convert to float; TODO: better way?
         p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
 
         dx, dy, dz = np.subtract(wpos, p2)
-        print 'dz', dz
         # don't want to care abt projections
         dr = np.sqrt(float(dx*dx)+float(dy*dy))
 
         # TODO : avoid hardcoding constants
+        # refer to diagram in #15 for a,b,c assignments
         r_c = 1.25 #a2
         r_a = np.sqrt(1.50**2 + 0.054**2) #d4
+        r_b = np.sqrt(dr*dr+dz*dz)
 
-        p3s = cxc(r_c, [dr,dz], r_a) #wx-py2, wz-py2?
+        a = coslaw(r_b, r_c, r_a)
+        b = coslaw(r_c, r_a, r_b)
 
-        if p3s is None:
-            # not possible
-            return None
-
-        # set preference - elbow up
-        if p3s[0][1] > p3s[1][1]:
-            p3 = p3s[1]
-        else:
-            p3 = p3s[0]
-
-        print 'delta', dr, dz
-        print 'p3', p3
-
-        q2 = np.arctan2(p3[0], p3[1])
-        q3 = np.arctan2(p3[1]-dz, dr-p3[0]) - 0.03619
+        q2 = np.pi/2 - a - np.arctan2(dz, dr)
+        q3 = np.pi/2 - b - 0.03619# not exactly aligned
 
         # inverse rotation ...
-        #r,p,y = rot
+        #R36 = self._T_par[3]*self._T_par[4]*self._T_par[5]*self._T_par[6]
+        #R36 = R36[:3,:3]
+        #print 'R36', simplify(R36)
+        #[
+        #[-sin(q4)*sin(q6) + cos(q4)*cos(q5)*cos(q6), -sin(q4)*cos(q6) - sin(q6)*cos(q4)*cos(q5), -sin(q5)*cos(q4)],
+        #[sin(q5)*cos(q6), -sin(q5)*sin(q6), cos(q5)],
+        #[-sin(q4)*cos(q5)*cos(q6) - sin(q6)*cos(q4), sin(q4)*sin(q6)*cos(q5) - cos(q4)*cos(q6), sin(q4)*sin(q5)]
+        #])
 
-        return q1,q2,q3,0,0,0#q4,q5,q6
+        R03 = self._R03.subs({'q1':q1, 'q2':q2, 'q3':q3})
+        R36 = np.array(R03.inv("LU")*Rrpy).astype(np.float32)
+
+        q4 = np.arctan2(R36[2,2], -R36[0,2])
+        q6 = np.arctan2(-R36[1,1], R36[1,0])
+        q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
+
+        # TODO : characterize when numbers are unstable
+
+        return q1,q2,q3,q4,q5,q6 #q4,q5,q6
+
+def test(kin, n=256, tol=np.deg2rad(1.0)):
+
+    good = []
+    bad = []
+
+    for i in range(n):
+        m = len(good)+len(bad)
+        if (m%100) == 0:
+            print('{}/{}'.format(m, n))
+
+        q = np.random.uniform(-np.pi, np.pi, size=6)
+        fk = kin.FK(q)
+        ik = kin.IK(*fk)
+        if np.allclose(q, ik, rtol=1e-3, atol=tol):
+            good.append(fk[0])
+        else:
+            bad.append(fk[0])
+
+    good = np.asarray(good, dtype=np.float32)
+    bad  = np.asarray(bad, dtype=np.float32)
+
+    print np.shape(good)
+    print np.shape(bad)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    if len(good) > 0:
+        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b')
+    if len(bad) > 0:
+        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r')
+    plt.show()
 
 def main():
     kin = KUKAKin()
-    #print kin.FK([0,0,0,0,0,0])
-    #print kin.IK([1.498, 0.0, 1.160], [0,0,0])
-    #q1, q2, q3 = kin.IK([2.153, 0, 1.947], [0, 0, 0.0])[:3]
-    q1, q2, q3 = kin.IK([-1.001, -0.728, 1.479], [-0.740, -0.367, -1.894])[:3]
-    print 'q1-q2-q3', q1,q2,q3
+    test(kin)
+    #ik = kin.IK([2.153, 0, 1.947], [0, 0, 0.0])
+    #print kin.FK(ik)
 
-    #t = np.array(kin.FK([q1, q2, q3, 0, 0, 0])[:3,3]).astype(np.float32)
-    #t = t.ravel()
-    #q1, q2, q3 = kin.IK(t, [0,0,0])[:3]
-    #print 'q1-q2-q3', q1,q2,q3
+    #res = kin.IK([2.149, 0.027, 1.906], [1.465, 0.135, 0.091])
+    #print res
+    #print kin.FK(res)
 
 if __name__ == "__main__":
     main()
