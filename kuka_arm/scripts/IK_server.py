@@ -18,7 +18,6 @@ from geometry_msgs.msg import Pose
 from mpmath import *
 from sympy import *
 
-
 def handle_calculate_IK(req):
     rospy.loginfo("Received %s eef-poses from the plan" % len(req.poses))
     if len(req.poses) < 1:
