@@ -15,6 +15,11 @@ import pickle
 import cloudpickle as pickle
 #import dill
 
+import rospkg
+import os
+rospack = rospkg.RosPack()
+pkg_root = rospack.get_path('kuka_arm')
+
 def rmat(axis, angle):
     """ 3x3 Rotation Matrix from Axis{x,y,z} + Angle(rad) """
     c, s = cos(angle), sin(angle)
@@ -140,7 +145,7 @@ class KUKAKin(object):
         return T, T02, T_cor, R03, R03i, Rrpy
 
     def _save(self, syms_fk, syms_ik, T, T02, T_cor, R03, R03i, Rrpy):
-        fname = 'TF.txt'
+        fname = os.path.join(pkg_root, 'config', 'TF.txt') 
 
         # TEST: arguments validation
         #print 'Args'
@@ -162,7 +167,7 @@ class KUKAKin(object):
         pickle.dump([f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy], open(fname, 'w'))
 
     def _load(self):
-        fname = 'TF.txt'
+        fname = os.path.join(pkg_root, 'config', 'TF.txt') 
         f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy = pickle.load(open(fname, 'r'))
         return f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy
 
