@@ -11,6 +11,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+import pickle
+import cloudpickle as pickle
+#import dill
+
 def rmat(axis, angle):
     """ 3x3 Rotation Matrix from Axis{x,y,z} + Angle(rad) """
     c, s = cos(angle), sin(angle)
@@ -63,53 +67,104 @@ class KUKAKin(object):
     Forward & Inverse Kinematics
     for KUKA KR210 6DOF Robot Arm.
     """
-    def __init__(self):
+    def __init__(self, build=True):
+        # Variables
+        self._q_fk = symbols('q1:7') # for FK
+        self._q_ik = symbols('r,p,y') # for IK
 
         # DH Parameters
         self._DH = [self.getDH(i) for i in range(7)]
+        self._s = self._params(self._DH)
 
-        # Numerical Values for DH Parameters
+        # building takes time - build once, then load thenceforth.
+        if build:
+            T, T02, T_cor, R03, R03i, Rrpy = self._build(self._s)
+            self._save(self._q_fk, self._q_ik, T, T02, T_cor, R03, R03i, Rrpy)
+        T, T02, T_cor, R03, R03i, Rrpy = self._load()
+
+        self._T = T
+        self._T02 = T02
+        self._T_cor = T_cor
+        self._R03 = R03
+        self._R03i = R03i
+        self._Rrpy = Rrpy
+
+        # validation
+        #M = self._T(0,0,0,0,0,0)
+        #print M[:3, 3]
+
+    def _params(self, DH):
+        """
+        Numerical Values for DH Parameters;
+        order : alpha, a, d, q
+        a = (z_i - z_{i-1}) length along x_{i-1}
+        d_i = (x_i - x_{i-1}) length along z_i
+        alpha = angle(z_i, z_{i-1})
+        follows coordinate definitions as shown in figures/coord.png
+        """
         print('Constructing Numerical DH Parameters ...')
-        self._s = {}
-        # order : alpha, a, d, q
-
-        # a = (z_i - z_{i-1}) length along x_{i-1}
-        # d_i = (x_i - x_{i-1}) length along z_i
-        # alpha = angle(z_i, z_{i-1})
-        # follows coordinate definitions as shown in figures/coord.png
-
-        self._s.update({k:v for (k,v) in zip(self._DH[0], [0, 0, 0.75])}) #0-1
-        self._s.update({k:v for (k,v) in zip(self._DH[1], [-pi/2, 0.35, 0])})#1-2
-        self._s.update({k:v for (k,v) in zip(self._DH[2], [0, 1.25, 0])})#2-3
-        self._s.update({k:v for (k,v) in zip(self._DH[3], [-pi/2, -0.054, 1.50])})#3-4
-        self._s.update({k:v for (k,v) in zip(self._DH[4], [pi/2, 0, 0])})#4-5
-        self._s.update({k:v for (k,v) in zip(self._DH[5], [-pi/2, 0, 0])})#5-6
-        self._s.update({k:v for (k,v) in zip(self._DH[6], [0, 0, 0.303, 0])})#6-7
+        s = {}
+        s.update({k:v for (k,v) in zip(DH[0], [0, 0, 0.75])}) #0-1
+        s.update({k:v for (k,v) in zip(DH[1], [-pi/2, 0.35, 0])})#1-2
+        s.update({k:v for (k,v) in zip(DH[2], [0, 1.25, 0])})#2-3
+        s.update({k:v for (k,v) in zip(DH[3], [-pi/2, -0.054, 1.50])})#3-4
+        s.update({k:v for (k,v) in zip(DH[4], [pi/2, 0, 0])})#4-5
+        s.update({k:v for (k,v) in zip(DH[5], [-pi/2, 0, 0])})#5-6
+        s.update({k:v for (k,v) in zip(DH[6], [0, 0, 0.303, 0])})#6-7
 
         # handle exceptional case, angular offset
         q2 = symbols('q2')
-        self._s[q2] = q2-pi/2
+        s[q2] = q2-pi/2
+        return s
 
+    def _build(self, s):
         # Transformation Matrix
         print('Constructing Raw Transformation Matrix ...')
-        self._T_raw = [self.dh2T(*dh) for dh in self._DH]
+        T_raw = [self.dh2T(*dh) for dh in self._DH]
         print('Substituting Constants ...')
-        self._T_par = [T.subs(self._s) for T in self._T_raw]
+        T_par = [T.subs(s) for T in T_raw]
         print('Composing Homogeneous Transforms ...')
-        self._T = reduce(lambda a,b:simplify(a*b), self._T_par) # full transform
+        T = reduce(lambda a,b:simplify(a*b), T_par) # full transform
         print('Applying Final Correction ...')
         T_cor = self.dh2URDF()
-        self._T = self._T*T_cor
-        self._T02 = self._T_par[0] * self._T_par[1] #0->2
-        self._R03 = (self._T02 * self._T_par[2])[:3,:3]
+        T = T*T_cor
+        T02 = T_par[0] * T_par[1] #0->2
+        R03 = (T02 * T_par[2])[:3,:3]
+        #R03i = simplify(R03.inv("LU"))
+        R03i = simplify(R03.T) # pretty sure this should work.
+        print R03i
 
-        # Variables
-        self._q = symbols('q1:7')
-        # == self._T.free_variables()
+        r, p, y = symbols('r,p,y')
+        Rrpy = rmat('z',y) * rmat('y',p) * rmat('x',r) * self.dh2URDF(R=True)
 
-        # validation
-        #M = self._T.subs({q:0 for q in self._q})
-        #print M[:, 3]
+        return T, T02, T_cor, R03, R03i, Rrpy
+
+    def _save(self, syms_fk, syms_ik, T, T02, T_cor, R03, R03i, Rrpy):
+        fname = 'TF.txt'
+
+        # TEST: arguments validation
+        #print 'Args'
+        #print T.free_symbols #q[1-6]
+        #print T02.free_symbols #q[1-2]
+        #print T_cor.free_symbols #None
+        #print R03i.free_symbols #q[1-3]
+        #print Rrpy.free_symbols #r,p,y
+
+        # create lambda functions
+        f_T = lambdify(syms_fk, T)
+        f_T02 = lambdify(syms_fk[:2], T02)
+        f_T_cor = lambdify([], T_cor)
+        f_R03 = lambdify(syms_fk[:3], R03)
+        f_R03i = lambdify(syms_fk[:3], R03i)
+        f_Rrpy = lambdify(syms_ik, Rrpy)
+
+        # Dump
+        pickle.dump([f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy], open(fname, 'w'))
+
+    def _load(self):
+        fname = 'TF.txt'
+        f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy = pickle.load(open(fname, 'r'))
+        return f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy
 
     @staticmethod
     def dh2URDF(R=False):
@@ -146,7 +201,8 @@ class KUKAKin(object):
     def FK(self, q):
         """ Compute Forward Kinematics """
         # TODO : support homogeneous -> trans, rot (by option)
-        T = self._T.subs({k:v for (k,v) in zip(self._q, q)})
+        T = self._T(*q)
+        #T = self._T.subs({k:v for (k,v) in zip(self._q_fk, q)})
         T = np.array(T).astype(np.float32)
         pos = tf.transformations.translation_from_matrix(T)
         rot = tf.transformations.euler_from_matrix(T)
@@ -168,7 +224,8 @@ class KUKAKin(object):
         #print 'wpos', wpos
 
         q1 = np.arctan2(wpos[1], wpos[0])
-        p2 = self._T02.subs({'q1':q1})[:3,3]
+        p2 = self._T02(q1, 0.11)[:3,3]
+        #p2 = self._T02.subs({'q1':q1})[:3,3]
         # convert to float; TODO: better way?
         p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
 
@@ -184,9 +241,31 @@ class KUKAKin(object):
 
         a = coslaw(r_b, r_c, r_a)
         b = coslaw(r_c, r_a, r_b)
-
         q2 = np.pi/2 - a - np.arctan2(dz, dr)
         q3 = np.pi/2 - b - 0.03619# not exactly aligned
+        sol = cxc(r_c, [dr, dz], r_a)
+
+        #if sol is None:
+        #    # fallback to q2-q3??
+        #    # TODO : validate
+        #    print 'Fail - Unreachable'
+        #else:
+        #    sol_i = np.argmax([sol[0][1], sol[1][1]])
+        #    #sol = sol[sol_i] # "prefer" elbow up
+        #    ##sol = sol[0] # choose one
+        #    sol0_q2 = np.arctan2(sol[0][0], sol[0][1])
+        #    sol1_q2 = np.arctan2(sol[1][0], sol[1][1])
+
+        #    sol0_q3 = np.arctan2(sol[0][1]-dz, dr-sol[0][0]) - q2 - 0.03619
+        #    sol1_q3 = np.arctan2(sol[1][1]-dz, dr-sol[1][0]) - q2 - 0.03619
+
+        #    i = np.argmin(np.abs([sol0_q2, sol1_q2]))
+
+        #    q2 = [sol0_q2, sol1_q2][i]
+        #    q3 = [sol0_q3, sol1_q3][i]
+        #    ##print q2, [sol0_q2, sol1_q2][i]
+        #    #print q3, sol0_q3, sol1_q3
+
 
         # inverse rotation ...
         #R36 = self._T_par[3]*self._T_par[4]*self._T_par[5]*self._T_par[6]
@@ -198,8 +277,13 @@ class KUKAKin(object):
         #[-sin(q4)*cos(q5)*cos(q6) - sin(q6)*cos(q4), sin(q4)*sin(q6)*cos(q5) - cos(q4)*cos(q6), sin(q4)*sin(q5)]
         #])
 
-        R03 = self._R03.subs({'q1':q1, 'q2':q2, 'q3':q3})
-        R36 = np.array(R03.inv("LU")*Rrpy).astype(np.float32)
+        R03i = self._R03i(q1, q2, q3)
+        #R03 = self._R03(q1,q2,q3)
+        #print R03
+        #R03i = np.linalg.inv(R03)
+
+        #R03i = self._R03i.subs({'q1':q1, 'q2':q2, 'q3':q3})
+        R36 = np.array(R03i*Rrpy).astype(np.float32)
 
         q4 = np.arctan2(R36[2,2], -R36[0,2])
         q6 = np.arctan2(-R36[1,1], R36[1,0])
@@ -209,44 +293,107 @@ class KUKAKin(object):
 
         return q1,q2,q3,q4,q5,q6 #q4,q5,q6
 
-def test(kin, n=256, tol=np.deg2rad(1.0)):
+def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
+    np.random.seed(0)
 
-    good = []
-    bad = []
+    good_if = [] # ik->fk
+    bad_if = []
+
+    good_fi = [] #fk->ik
+    bad_fi = []
 
     for i in range(n):
-        m = len(good)+len(bad)
-        if (m%100) == 0:
-            print('{}/{}'.format(m, n))
+        if (i%100) == 0:
+            print('{}/{}'.format(i, n))
 
-        q = np.random.uniform(-np.pi, np.pi, size=6)
+        # test fk-ik
+        q = np.random.uniform(-lim, lim, size=6)
         fk = kin.FK(q)
         ik = kin.IK(*fk)
         if np.allclose(q, ik, rtol=1e-3, atol=tol):
-            good.append(fk[0])
+            good_fi.append(q)
         else:
-            bad.append(fk[0])
+            bad_fi.append(q)
 
-    good = np.asarray(good, dtype=np.float32)
-    bad  = np.asarray(bad, dtype=np.float32)
+        # test ik-fk
+        p = np.random.uniform(-2, 2, size=3) # xyz
+        q = np.random.uniform(-np.pi, np.pi, size=3) #rpy
+        ik = kin.IK(p,q)
+        fk = kin.FK(ik)
+        if np.allclose(p, fk[0], atol=0.05) and np.allclose(q, fk[1], atol=tol):
+            good_if.append(p)
+        else:
+            bad_if.append(p)
 
-    print np.shape(good)
-    print np.shape(bad)
+    good_fi = np.asarray(good_fi, dtype=np.float32)
+    bad_fi  = np.asarray(bad_fi, dtype=np.float32)
 
+    good_if = np.asarray(good_if, dtype=np.float32)
+    bad_if  = np.asarray(bad_if, dtype=np.float32)
+
+    # draw ...
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
 
+    # fk-ik
+    good = good_fi
+    bad = bad_fi
+
+    ax = fig.add_subplot(221, projection='3d')
     if len(good) > 0:
-        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b')
+        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b', label='good012')
     if len(bad) > 0:
-        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r')
+        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r', label='bad012')
+    ax.legend()
+
+    ax = fig.add_subplot(223, projection='3d')
+    if len(good) > 0:
+        ax.scatter(good[:,3], good[:,4], good[:,5],  c='b', label='good345')
+    if len(bad) > 0:
+        ax.scatter(bad[:,3], bad[:,4], bad[:,5], c='r', label='bad345')
+    ax.legend()
+
+    # ik-fk
+    good = good_if
+    bad = bad_if
+    ax = fig.add_subplot(122, projection='3d')
+    print 'x', np.min(bad[:,0]), np.max(bad[:,0])
+    print 'y', np.min(bad[:,1]), np.max(bad[:,1])
+    print 'z', np.min(bad[:,2]), np.max(bad[:,2])
+    if len(good) > 0:
+        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b', label='good')
+    if len(bad) > 0:
+        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r', label='bad')
+    ax.legend()
+
     plt.show()
 
 def main():
-    kin = KUKAKin()
-    test(kin)
-    #ik = kin.IK([2.153, 0, 1.947], [0, 0, 0.0])
-    #print kin.FK(ik)
+    kin = KUKAKin(build=False)
+
+    #for n in range(100):
+    #    r,p,y = np.random.uniform(-np.pi, np.pi, size=3)
+    #    r0 = np.linalg.inv(kin._R03(r,p,y))
+    #    r1 = kin._R03i(r,p,y)
+    #    print np.allclose(r0, r1)
+
+    #r = kin._R03(0,0,1)
+    #print r
+    #print np.linalg.inv(r)
+    #print kin._R03i(0,0,1)
+
+    test(kin, n=4096, lim=np.pi)
+
+    #xs = []
+    #ys = []
+    #for r in np.linspace(-np.pi, np.pi, 200):
+    #    ik = kin.IK([2.153, 0, 1.947], [0, 0, r])
+    #    fk = kin.FK(ik)[1][2]
+    #    print r
+    #    xs.append(r)
+    #    ys.append(fk)
+
+    #plt.plot(xs,ys)
+    #plt.show()
 
     #res = kin.IK([2.149, 0.027, 1.906], [1.465, 0.135, 0.091])
     #print res
