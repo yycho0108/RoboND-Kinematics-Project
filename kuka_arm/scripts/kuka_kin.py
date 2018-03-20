@@ -215,7 +215,10 @@ class KUKAKin(object):
 
         # compute wrist position ...
         r, p, y = rot
-        Rrpy = rmat('z',y) * rmat('y',p) * rmat('x',r) * self.dh2URDF(R=True)
+        #Rrpy = rmat('z',y) * rmat('y',p) * rmat('x',r) * self.dh2URDF(R=True)
+        #Print 'rrpy0', Rrpy
+        Rrpy = self._Rrpy(r,p,y)
+        #print 'rrpy1', Rrpy
         n = np.asarray(Rrpy[:, 2]).astype(np.float32) # normal
 
         d6 = 0.0
@@ -283,13 +286,11 @@ class KUKAKin(object):
         #R03i = np.linalg.inv(R03)
 
         #R03i = self._R03i.subs({'q1':q1, 'q2':q2, 'q3':q3})
-        R36 = np.array(R03i*Rrpy).astype(np.float32)
+        R36 = np.array(np.dot(R03i, Rrpy)).astype(np.float32)
 
         q4 = np.arctan2(R36[2,2], -R36[0,2])
         q6 = np.arctan2(-R36[1,1], R36[1,0])
         q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
-
-        # TODO : characterize when numbers are unstable
 
         return q1,q2,q3,q4,q5,q6 #q4,q5,q6
 
@@ -318,12 +319,13 @@ def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
         # test ik-fk
         p = np.random.uniform(-2, 2, size=3) # xyz
         q = np.random.uniform(-np.pi, np.pi, size=3) #rpy
+        q[1] = np.random.uniform(-np.pi/2, np.pi/2)
         ik = kin.IK(p,q)
         fk = kin.FK(ik)
-        if np.allclose(p, fk[0], atol=0.05) and np.allclose(q, fk[1], atol=tol):
-            good_if.append(p)
+        if np.allclose(p, fk[0], atol=0.01) and np.allclose(q, fk[1], atol=tol):
+            good_if.append(list(p) + list(q))
         else:
-            bad_if.append(p)
+            bad_if.append(list(p) + list(q))
 
     good_fi = np.asarray(good_fi, dtype=np.float32)
     bad_fi  = np.asarray(bad_fi, dtype=np.float32)
@@ -339,10 +341,14 @@ def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
     bad = bad_fi
 
     ax = fig.add_subplot(221, projection='3d')
+    ax.set_title('Joint Space Viz')
     if len(good) > 0:
         ax.scatter(good[:,0], good[:,1], good[:,2],  c='b', label='good012')
     if len(bad) > 0:
         ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r', label='bad012')
+    ax.set_xlabel('0')
+    ax.set_ylabel('1')
+    ax.set_zlabel('2')
     ax.legend()
 
     ax = fig.add_subplot(223, projection='3d')
@@ -350,19 +356,33 @@ def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
         ax.scatter(good[:,3], good[:,4], good[:,5],  c='b', label='good345')
     if len(bad) > 0:
         ax.scatter(bad[:,3], bad[:,4], bad[:,5], c='r', label='bad345')
+    ax.set_xlabel('3')
+    ax.set_ylabel('4')
+    ax.set_zlabel('5')
     ax.legend()
 
     # ik-fk
     good = good_if
     bad = bad_if
-    ax = fig.add_subplot(122, projection='3d')
-    print 'x', np.min(bad[:,0]), np.max(bad[:,0])
-    print 'y', np.min(bad[:,1]), np.max(bad[:,1])
-    print 'z', np.min(bad[:,2]), np.max(bad[:,2])
+    ax = fig.add_subplot(222, projection='3d')
+    ax.set_title('Cartesian Space Viz')
     if len(good) > 0:
-        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b', label='good')
+        ax.scatter(good[:,0], good[:,1], good[:,2],  c='b', label='goodxyz')
     if len(bad) > 0:
-        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r', label='bad')
+        ax.scatter(bad[:,0], bad[:,1], bad[:,2], c='r', label='badxyz')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    ax.legend()
+
+    ax = fig.add_subplot(224, projection='3d')
+    if len(good) > 0:
+        ax.scatter(good[:,3], good[:,4], good[:,5],  c='b', label='goodrpy')
+    if len(bad) > 0:
+        ax.scatter(bad[:,3], bad[:,4], bad[:,5], c='r', label='badrpy')
+    ax.set_xlabel('r')
+    ax.set_ylabel('p')
+    ax.set_zlabel('y')
     ax.legend()
 
     plt.show()
@@ -382,6 +402,7 @@ def main():
     #print kin._R03i(0,0,1)
 
     test(kin, n=4096, lim=np.pi)
+    # verified : usually ok for -pi/2 < pitch < pi/2
 
     #xs = []
     #ys = []
