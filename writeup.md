@@ -2,7 +2,11 @@
 
 ## Kinematic Analysis
 
+I used the following frame/axes assignments in the kinematic analysis of the KUKA KR210 Robot Arm:
+
 ![DH.png](figures/DH.png)
+
+In the above diagram, note that &otimes; represents vector going *into* the page, or away from the viewer, whereas one shown as &#8857; (not used) might represent a vector coming *out of* the page, or towards the viewer. It is also noteworthy that the diagram is not drawn in scale.
 
 Accordingly, we find the DH parameters of the KUKA arm to be as follows:
 
@@ -18,7 +22,55 @@ Accordingly, we find the DH parameters of the KUKA arm to be as follows:
 
 These values are defined [here](kuka_kin.py#112).
 
-As a simple validation, I set the joint angles to zero and ran [fetch\_tf.py](./kuka_arm/scripts/fetch_tf.py) in order to see if the values from the tf transform matched.
+### Angular Parameters
+
+In order to obtain the twist, we simply examine the joint angles and their difference about the common normal at each position, as follows:
+
+X&#7522; | &alpha; | Z&#7522; | Z&#7522;&#8330;&#8321;
+:-------:|:-------:|:--------:|:----------------------:
+&rarr;   | 0       | &uarr;   | &uarr;
+&rarr;   | -&pi;/2 | &uarr;   | &otimes; 
+&uarr;   | 0       | &otimes; | &otimes;
+&uarr;   | -&pi;/2 | &otimes; | &rarr;
+&uarr;   | &pi;/2  | &rarr;   | &otimes;
+&uarr;   | -&pi;/2 | &otimes; | &rarr;
+
+Namely, rotation about X&#7522; of angle &alpha; will align Z&#7522; with Z&#7522;&#8330;&#8321;.
+
+As for obtaining &theta;, we can see from the above table that each &theta;&#7522; exactly correspond to q&#7522; (the joint angle) with the exception of &theta;&#8322;, where the relative rotation of X&#8322; from X&#8321; introduces an additional offset of -&pi;/2 from the joint angles to align X&#8322; with X&#8321;.
+
+### Displacement Parameters
+
+With the above definition (as from the figure), obtaining the displacements is straightforward.
+
+Without laboring thorough all the details, here's an excerpt from [kr210.urdf.xacro](./kuka_arm/urdf/kr210.urdf.xacro):
+
+```xml
+<joint name="joint_1" type="revolute">
+    <origin xyz="0 0 0.33" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="link_1"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-185*deg}" upper="${185*deg}" effort="300" velocity="${123*deg}" />
+</joint>
+<joint name="joint_2" type="revolute">
+    <origin xyz="0.35 0 0.42" rpy="0 0 0"/>
+    <parent link="link_1"/>
+    <child link="link_2"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-45*deg}" upper="${85*deg}" effort="300" velocity="${115*deg}"/>
+</joint>
+```
+
+Here, it is simple to obtain a&#8321;=0.35, which is the radial distance of z&#8322; from z&#8321;.
+As the joint axis of joint\_1 is along the z-axis, we can simply take the x-component of joint origin (since y=0) as the value of a&#8321;!
+
+Whereas d&#8321; is not immediately visible, it is also quite simple to see how it would be obtained:
+
+Since O&#8321; was translated to the same height as O&#8322; in order to simplify the DH parameters, the displacement is in fact the sum of the two displacements in the positive-z direction, i.e. 0.33+0.42=0.75. This is also consistent with what we have seen.
+
+As a simple validation, I set the joint angles to zero and ran [fetch\_tf.py](./kuka_arm/scripts/fetch_tf.py) in order to see if the values from the tf transform matched. 
+Note that frame origins were queried based on the ones assigned in DH conventions (illustrated above), rather than the ones specified in the URDF, for the most compact representation.
 
 Sample output:
 ```bash
@@ -38,6 +90,118 @@ d7 : 0.303
 ```
 
 It is straightforward to see that the values exactly correspond to the parameters reported in the table.
+
+### Transformation Matrices
+
+Given DH Parameters &alpha;, a, d, and &theta;, the following matrix represents the corresponding transformation:
+
+|||
+:--------------------:|:--------------------:|:-----------:|:-------------:
+cos&theta;            | -sin&theta;          | 0           | a
+sin&theta; cos&alpha; | cos&theta;cos&alpha; | -sin&alpha; | -d sin&alpha;
+sin&theta; sin&alpha; | cos&theta;sin&alpha; | cos&alpha;  | d cos&alpha; 
+0                     | 0                    | 0           | 1
+
+In implementation, this is shown in [kuka\_kin.py](kuka_arm/scripts/kuka_kin.py#199) as a class method of `KUKAKin()`:
+```python
+@staticmethod
+def dh2T(alpha, a, d, q):
+    """ Convert DH Parameters to Transformation Matrix """
+    cq = cos(q)
+    sq = sin(q)
+    ca = cos(alpha)
+    sa = sin(alpha)
+
+    T = Matrix([
+        [cq, -sq, 0, a],
+        [sq*ca, cq*ca, -sa, -sa*d],
+        [sq*sa, cq*sa, ca, ca*d],
+        [0, 0, 0, 1]
+        ])
+    return T
+```
+
+Accordingly, we find the individual transformation matrices to be as follows:
+
+- 0 (base\_link) &rarr; 1
+
+|||
+:-:|:-:|:-:|:-:
+cos(q1) | -sin(q1) | 0 | 0
+sin(q1) | cos(q1) | 0 | 0
+0 | 0 | 1 | 0.75
+0 | 0 | 0 | 1
+
+- 1 &rarr; 2
+
+|||
+:-:|:-:|:-:|:-:
+sin(q2) | cos(q2) | 0 | 0.35
+0 | 0 | 1 | 0
+cos(q2) | -sin(q2) | 0 | 0
+0 | 0 | 0 | 1
+
+- 2 &rarr; 3
+
+|||
+:-:|:-:|:-:|:-:
+cos(q3) | -sin(q3) | 0 | 1.25
+sin(q3) | cos(q3) | 0 | 0
+0 | 0 | 1 | 0
+0 | 0 | 0 | 1
+
+- 3 &rarr; 4
+
+|||
+:-:|:-:|:-:|:-:
+cos(q4) | -sin(q4) | 0 | -0.054
+0 | 0 | 1 | 1.5
+-sin(q4) | -cos(q4) | 0 | 0
+0 | 0 | 0 | 1
+
+- 4 &rarr; 5
+
+|||
+:-:|:-:|:-:|:-:
+cos(q5) | -sin(q5) | 0 | 0
+0 | 0 | -1 | 0
+sin(q5) | cos(q5) | 0 | 0
+0 | 0 | 0 | 1
+
+- 5 &rarr; 6
+
+|||
+:-:|:-:|:-:|:-:
+cos(q6) | -sin(q6) | 0 | 0
+0 | 0 | 1 | 0
+-sin(q6) | -cos(q6) | 0 | 0
+0 | 0 | 0 | 1
+
+- 6 &rarr; 7 ("EE", End Effector)
+
+|||
+:-:|:-:|:-:|:-:
+1 | 0 | 0 | 0
+0 | 1 | 0 | 0
+0 | 0 | 1 | 0.303
+0 | 0 | 0 | 1
+
+Where the composition of these matrices  would be equal to the homogeneous transform from base\_link to the gripper as (assuming that the pose of the gripper is given as x, y, z, qx, qy, qz, and qw) (see [transformations.py](https://github.com/ros/geometry/blob/hydro-devel/tf/src/tf/transformations.py#L1174) for reference):
+
+|||
+:-:|:-:|:-:|:-:
+(qw&sup2; + qx&sup2; - qy&sup2; - qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(-qw\*qz + qx\*qy)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(qw\*qy + qx\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | x
+2.0\*(qw\*qz + qx\*qy)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | (qw&sup2; - qx&sup2; + qy&sup2; - qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(-qw\*qx + qy\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | y
+2.0\*(-qw\*qy + qx\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(qw\*qx + qy\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | (qw&sup2; - qx&sup2; - qy&sup2; + qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | z
+0.0 | 0.0 | 0.0 | 1.0
+
+### Inverse Kinematics
+
+Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics can be decomposed into two independent components: position (joints 1-3) and orientation (joints 4-6).
+
+#### Inverse Position
+
+#### Inverse Orientation
 
 
 ## Project Implementation

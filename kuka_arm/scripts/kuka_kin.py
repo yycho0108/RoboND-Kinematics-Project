@@ -128,11 +128,24 @@ class KUKAKin(object):
         T_raw = [self.dh2T(*dh) for dh in self._DH]
         print('Substituting Constants ...')
         T_par = [T.subs(s) for T in T_raw]
+
+        def mdprint(M):
+            print ' == BEGIN == '
+            print '|||'
+            print ':-:|:-:|:-:|:-:'
+            n,_ = M.shape
+            for i in range(n):
+                print ' | '.join(['{}'.format(e) for e in M[i,:]])
+
+        #for T in T_par:
+        #    mdprint(T)
+
         print('Composing Homogeneous Transforms ...')
         T = reduce(lambda a,b:simplify(a*b), T_par) # full transform
         print('Applying Final Correction ...')
         T_cor = self.dh2URDF()
         T = T*T_cor
+        mdprint(T)
         T02 = T_par[0] * T_par[1] #0->2
         R03 = (T02 * T_par[2])[:3,:3]
         #R03i = simplify(R03.inv("LU"))
