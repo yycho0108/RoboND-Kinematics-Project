@@ -95,12 +95,7 @@ It is straightforward to see that the values exactly correspond to the parameter
 
 Given DH Parameters &alpha;, a, d, and &theta;, the following matrix represents the corresponding transformation:
 
-|||
-:--------------------:|:--------------------:|:-----------:|:-------------:
-cos&theta;            | -sin&theta;          | 0           | a
-sin&theta; cos&alpha; | cos&theta;cos&alpha; | -sin&alpha; | -d sin&alpha;
-sin&theta; sin&alpha; | cos&theta;sin&alpha; | cos&alpha;  | d cos&alpha; 
-0                     | 0                    | 0           | 1
+![tf\_dh.svg](./figures/tf_dh.svg)
 
 In implementation, this is shown in [kuka\_kin.py](kuka_arm/scripts/kuka_kin.py#199) as a class method of `KUKAKin()`:
 ```python
@@ -125,23 +120,18 @@ Accordingly, we find the individual transformation matrices to be as follows:
 
 ![tfs.svg](./figures/tfs.svg)
 
-- 6 &rarr; 7 ("EE", End Effector)
+And the final (static) transformation to the gripper:
 
-|||
-:-:|:-:|:-:|:-:
-1 | 0 | 0 | 0
-0 | 1 | 0 | 0
-0 | 0 | 1 | 0.303
-0 | 0 | 0 | 1
+![tf\_ee.svg](./figures/tf_ee.svg)
 
-Where the composition of these matrices  would be equal to the homogeneous transform from base\_link to the gripper as (assuming that the pose of the gripper is given as x, y, z, qx, qy, qz, and qw) (see [transformations.py](https://github.com/ros/geometry/blob/hydro-devel/tf/src/tf/transformations.py#L1174) for reference):
+Where the composition of these matrices  would be equal to the homogeneous transform from base\_link to the gripper as:
 
-|||
-:-:|:-:|:-:|:-:
-(qw&sup2; + qx&sup2; - qy&sup2; - qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(-qw\*qz + qx\*qy)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(qw\*qy + qx\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | x
-2.0\*(qw\*qz + qx\*qy)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | (qw&sup2; - qx&sup2; + qy&sup2; - qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(-qw\*qx + qy\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | y
-2.0\*(-qw\*qy + qx\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | 2.0\*(qw\*qx + qy\*qz)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | (qw&sup2; - qx&sup2; - qy&sup2; + qz&sup2;)/(qw&sup2; + qx&sup2; + qy&sup2; + qz&sup2;) | z
-0.0 | 0.0 | 0.0 | 1.0
+(assuming that the pose of the gripper is given as x, y, z, qx, qy, qz, and qw)
+
+![tf\_07.svg](./figures/tf_07.svg)
+
+(see [transformations.py](https://github.com/ros/geometry/blob/hydro-devel/tf/src/tf/transformations.py#L1174) for reference)
+
 
 ### Inverse Kinematics
 
