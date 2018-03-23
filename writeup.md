@@ -123,59 +123,7 @@ def dh2T(alpha, a, d, q):
 
 Accordingly, we find the individual transformation matrices to be as follows:
 
-- 0 (base\_link) &rarr; 1
-
-|||
-:-:|:-:|:-:|:-:
-cos(q1) | -sin(q1) | 0 | 0
-sin(q1) | cos(q1) | 0 | 0
-0 | 0 | 1 | 0.75
-0 | 0 | 0 | 1
-
-- 1 &rarr; 2
-
-|||
-:-:|:-:|:-:|:-:
-sin(q2) | cos(q2) | 0 | 0.35
-0 | 0 | 1 | 0
-cos(q2) | -sin(q2) | 0 | 0
-0 | 0 | 0 | 1
-
-- 2 &rarr; 3
-
-|||
-:-:|:-:|:-:|:-:
-cos(q3) | -sin(q3) | 0 | 1.25
-sin(q3) | cos(q3) | 0 | 0
-0 | 0 | 1 | 0
-0 | 0 | 0 | 1
-
-- 3 &rarr; 4
-
-|||
-:-:|:-:|:-:|:-:
-cos(q4) | -sin(q4) | 0 | -0.054
-0 | 0 | 1 | 1.5
--sin(q4) | -cos(q4) | 0 | 0
-0 | 0 | 0 | 1
-
-- 4 &rarr; 5
-
-|||
-:-:|:-:|:-:|:-:
-cos(q5) | -sin(q5) | 0 | 0
-0 | 0 | -1 | 0
-sin(q5) | cos(q5) | 0 | 0
-0 | 0 | 0 | 1
-
-- 5 &rarr; 6
-
-|||
-:-:|:-:|:-:|:-:
-cos(q6) | -sin(q6) | 0 | 0
-0 | 0 | 1 | 0
--sin(q6) | -cos(q6) | 0 | 0
-0 | 0 | 0 | 1
+![tfs.svg](./figures/tfs.svg)
 
 - 6 &rarr; 7 ("EE", End Effector)
 

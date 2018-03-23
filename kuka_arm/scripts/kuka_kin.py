@@ -131,14 +131,17 @@ class KUKAKin(object):
 
         def mdprint(M):
             print ' == BEGIN == '
-            print '|||'
-            print ':-:|:-:|:-:|:-:'
+            #print '|||'
+            #print ':-:|:-:|:-:|:-:'
+            print '\\begin{pmatrix}'
             n,_ = M.shape
             for i in range(n):
-                print ' | '.join(['{}'.format(e) for e in M[i,:]])
+                s = ' & '.join(['{}'.format(e) for e in M[i,:]]) + ' \\\\'
+                print s
+            print '\\end{pmatrix}'
 
-        #for T in T_par:
-        #    mdprint(T)
+        for T in T_par:
+            mdprint(T)
 
         print('Composing Homogeneous Transforms ...')
         T = reduce(lambda a,b:simplify(a*b), T_par) # full transform
@@ -406,7 +409,7 @@ def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
     plt.show()
 
 def main():
-    kin = KUKAKin(build=False)
+    kin = KUKAKin(build=True)
 
     #for n in range(100):
     #    r,p,y = np.random.uniform(-np.pi, np.pi, size=3)
