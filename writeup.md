@@ -124,13 +124,14 @@ And the final (static) transformation to the gripper:
 
 ![tf\_ee.svg](./figures/tf_ee.svg)
 
-Where the composition of these matrices  would be equal to the homogeneous transform from base\_link to the gripper as:
-
-(assuming that the pose of the gripper is given as x, y, z, qx, qy, qz, and qw)
+Assuming that the pose of the gripper is given as position `(x, y, z)` and orientation `(qw, qx, qy, qz)`, the composition of the matrices above would be equal to the homogeneous transform from base\_link to the gripper as:
 
 ![tf\_07.svg](./figures/tf_07.svg)
 
 (see [transformations.py](https://github.com/ros/geometry/blob/hydro-devel/tf/src/tf/transformations.py#L1174) for reference)
+
+Assuming unit quaternion, this expression simplifies to:
+![tf\_07\_unit.svg](./figures/tf_07_unit.svg)
 
 
 ### Inverse Kinematics
@@ -141,5 +142,8 @@ Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics ca
 
 #### Inverse Orientation
 
+#### Error Characterization
+
+![ik\_errors.gif](./figures/ik_errors.gif)
 
 ## Project Implementation

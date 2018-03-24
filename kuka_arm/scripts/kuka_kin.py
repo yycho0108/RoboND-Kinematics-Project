@@ -8,7 +8,10 @@ import tf
 from mpmath import *
 from sympy import *
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 
 import pickle
@@ -241,21 +244,30 @@ class KUKAKin(object):
         Rrpy = self._Rrpy(r,p,y)
         #print 'rrpy1', Rrpy
         n = np.asarray(Rrpy[:, 2]).astype(np.float32) # normal
+        #print n
 
         d6 = 0.0
         l = 0.303
-        wpos = np.subtract(pos, (d6 + l)*n.ravel())
+        wpos = np.subtract(pos, (d6 + l)*n.reshape([3]))
         #print 'wpos', wpos
 
         q1 = np.arctan2(wpos[1], wpos[0])
-        p2 = self._T02(q1, 0.11)[:3,3]
+        p2 = self._T02(q1, 0.0)[:3,3]
         #p2 = self._T02.subs({'q1':q1})[:3,3]
         # convert to float; TODO: better way?
         p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
 
         dx, dy, dz = np.subtract(wpos, p2)
+
+        def nrmat(a):
+            ca = np.cos(a)
+            sa = np.sin(a)
+            return np.reshape([ca,-sa,sa,ca], (2,2))
+
+        dr = nrmat(-q1).dot([dx, dy])[0]
         # don't want to care abt projections
-        dr = np.sqrt(float(dx*dx)+float(dy*dy))
+        #dr = np.dot(n[:2], [dx,dy])#n.dot([dx,dy,dz])
+        #dr = np.sqrt(float(dx*dx)+float(dy*dy))
 
         # TODO : avoid hardcoding constants
         # refer to diagram in #15 for a,b,c assignments
@@ -266,8 +278,9 @@ class KUKAKin(object):
         a = coslaw(r_b, r_c, r_a)
         b = coslaw(r_c, r_a, r_b)
         q2 = np.pi/2 - a - np.arctan2(dz, dr)
-        q3 = np.pi/2 - b - 0.03619# not exactly aligned
-        sol = cxc(r_c, [dr, dz], r_a)
+        #q3 = np.pi/2 - b - 0.03619# not exactly aligned
+        q3 = np.pi/2 - b - np.arctan2(0.054, 1.50)
+        #sol = cxc(r_c, [dr, dz], r_a)
 
         #if sol is None:
         #    # fallback to q2-q3??
@@ -314,6 +327,149 @@ class KUKAKin(object):
         q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
 
         return q1,q2,q3,q4,q5,q6 #q4,q5,q6
+
+def hide_axis(ax):
+    ax.spines['top'].set_color('none')
+    ax.spines['bottom'].set_color('none')
+    ax.spines['left'].set_color('none')
+    ax.spines['right'].set_color('none')
+    ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
+
+def error(kin, n=1024):
+    """ Characterize FK-IK Errors """
+    fig = plt.figure(figsize=(9.6, 4.8))
+    print fig.get_size_inches()
+    
+
+    # dummy axis for setting super title
+    ax0 = fig.add_subplot(111)
+    ax0.set_title('IK Error Characterization')
+    hide_axis(ax0)
+
+    ax_p = fig.add_subplot(121, projection='3d')
+    ax_p.set_title('Position (m) ')
+    ax_q = fig.add_subplot(122, projection='3d')
+    ax_q.set_title('Orientation (rad) ')
+
+    ps = []
+    perrs = []
+
+    qs = []
+    qerrs = []
+
+    cm0= matplotlib.cm.get_cmap('cool')
+    cm = cm0(np.arange(cm0.N))
+    cm[:,-1] = np.linspace(0.1, 1, cm0.N) # minimum 0.1
+    cm = ListedColormap(cm)
+
+    for i in range(n):
+        p = np.random.uniform(-2.0, 2.0, size=3)
+        q = np.random.uniform(-np.pi, np.pi, size=3)
+        q[1] = np.random.uniform(-np.pi/2, np.pi/2) # limit pitch to +-pi/2
+        #q *= 0
+
+        ik = kin.IK(p, q)
+        fk = kin.FK(ik)
+        if np.any(np.isnan(fk)):
+            # impossible
+            continue
+        perr = np.subtract(fk[0], p) # positional error, meters
+        qerr = np.subtract(fk[1], q) # rotational error, radians
+
+        ps.append(p)
+        qs.append(q)
+        perrs.append(perr)
+        qerrs.append(qerr)
+
+    ps, perrs, qs, qerrs = [np.float32(e) for e in (ps,perrs,qs,qerrs)]
+
+    ax = ax_p
+    c = np.linalg.norm(perrs, axis=-1)
+    s = ax.scatter(ps[:,0], ps[:,1], ps[:,2],
+            c=c,
+            cmap=cm#'rainbow'
+            )
+    fig.colorbar(s, ax=ax)
+    
+    ax.quiver(ps[:,0], ps[:,1], ps[:,2],
+            perrs[:,0], perrs[:,1], perrs[:,2],
+            color='red',
+            alpha=0.5,
+            )
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+
+    ax = ax_q
+    #c = np.linalg.norm(qerrs, axis=-1)
+    #c = np.sqrt(np.sum(np.square(qerrs), axis=-1))
+    #print np.sort(c[np.logical_not(np.isnan(c))])[-100:]
+    #print np.sort(qerrs[np.logical_not(np.isnan(qerrs))].ravel())[-100:]
+    c = np.max(np.abs(qerrs), axis=-1)
+    print np.sort(qerrs.ravel())[-100:]
+    print np.sort(c)[-100:]
+    s = ax.scatter(qs[:,0], qs[:,1], qs[:,2],
+            c=c,
+            cmap=cm,
+            )
+
+    fig.colorbar(s, ax=ax)
+    ax.quiver(qs[:,0], qs[:,1], qs[:,2],
+            qerrs[:,0], qerrs[:,1], qerrs[:,2],
+            color='red',
+            alpha=0.5,
+            )
+    ax.set_xlabel('r')
+    ax.set_ylabel('p')
+    ax.set_zlabel('y')
+
+    #ax_q.view_init(elev=90, azim=0)
+    #ax_p.view_init(elev=90, azim=0)
+
+    def init():
+        ax_q.view_init(azim=0)
+        ax_p.view_init(azim=0)
+        return fig,
+
+    def animate(i):
+        print i
+        ax_q.view_init(azim=i)
+        ax_p.view_init(azim=i)
+        return fig,
+
+    #ani = FuncAnimation(fig, animate, init_func=init,
+    #        frames=range(0,360,2), interval=20, blit=False)
+    #ani.save('ik_errors.gif', fps=20, writer='imagemagick')
+
+    plt.show()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    c = np.linalg.norm(perrs, axis=-1)
+    s = ax.scatter(ps[:,0], ps[:,1],
+            c=c,
+            cmap=cm#'rainbow'
+            )
+    fig.colorbar(s, ax=ax)
+    
+    #ax.quiver(ps[:,0], ps[:,1],
+    #        perrs[:,0], perrs[:,1],
+    #        color='red',
+    #        alpha=0.5,
+    #        angles='xy',
+    #        scale_units='xy',
+    #        scale=1.0,
+    #        )
+    t = np.linspace(-np.pi, np.pi)
+    ax.plot(
+            0.303 + 0.35*np.cos(t),
+            0.35*np.sin(t))
+    print np.max(perrs[:,0])
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.grid()
+    plt.show()
+
 
 def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
     np.random.seed(0)
@@ -409,7 +565,7 @@ def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
     plt.show()
 
 def main():
-    kin = KUKAKin(build=True)
+    kin = KUKAKin(build=False)
 
     #for n in range(100):
     #    r,p,y = np.random.uniform(-np.pi, np.pi, size=3)
@@ -422,8 +578,9 @@ def main():
     #print np.linalg.inv(r)
     #print kin._R03i(0,0,1)
 
-    test(kin, n=4096, lim=np.pi)
+    #test(kin, n=4096, lim=np.pi)
     # verified : usually ok for -pi/2 < pitch < pi/2
+    error(kin, n=1024)
 
     #xs = []
     #ys = []
