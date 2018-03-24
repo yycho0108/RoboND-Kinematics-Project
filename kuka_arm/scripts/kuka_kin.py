@@ -263,7 +263,7 @@ class KUKAKin(object):
             ca = np.cos(a)
             sa = np.sin(a)
             return np.reshape([ca,-sa,sa,ca], (2,2))
-
+        # IMPORTANT : SIGNED DISTANCE
         dr = nrmat(-q1).dot([dx, dy])[0]
         # don't want to care abt projections
         #dr = np.dot(n[:2], [dx,dy])#n.dot([dx,dy,dz])
@@ -338,8 +338,6 @@ def hide_axis(ax):
 def error(kin, n=1024):
     """ Characterize FK-IK Errors """
     fig = plt.figure(figsize=(9.6, 4.8))
-    print fig.get_size_inches()
-    
 
     # dummy axis for setting super title
     ax0 = fig.add_subplot(111)
@@ -429,46 +427,48 @@ def error(kin, n=1024):
     def init():
         ax_q.view_init(azim=0)
         ax_p.view_init(azim=0)
-        return fig,
+        return fig,#ax_q, ax_p
 
     def animate(i):
         print i
         ax_q.view_init(azim=i)
         ax_p.view_init(azim=i)
-        return fig,
+        return fig,#ax_q, ax_p
 
-    #ani = FuncAnimation(fig, animate, init_func=init,
-    #        frames=range(0,360,2), interval=20, blit=False)
-    #ani.save('ik_errors.gif', fps=20, writer='imagemagick')
+    plt.draw()
+    plt.pause(0.001)
+    ani = FuncAnimation(fig, animate, init_func=init,
+            frames=range(0,360,2), interval=20, blit=False)
+    #plt.show()
+    ani.save('ik_errors.gif', fps=20, writer='imagemagick')
 
-    plt.show()
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    c = np.linalg.norm(perrs, axis=-1)
-    s = ax.scatter(ps[:,0], ps[:,1],
-            c=c,
-            cmap=cm#'rainbow'
-            )
-    fig.colorbar(s, ax=ax)
-    
-    #ax.quiver(ps[:,0], ps[:,1],
-    #        perrs[:,0], perrs[:,1],
-    #        color='red',
-    #        alpha=0.5,
-    #        angles='xy',
-    #        scale_units='xy',
-    #        scale=1.0,
+    #fig = plt.figure()
+    #ax = fig.add_subplot(111)
+    #c = np.linalg.norm(perrs, axis=-1)
+    #s = ax.scatter(ps[:,0], ps[:,1],
+    #        c=c,
+    #        cmap=cm#'rainbow'
     #        )
-    t = np.linspace(-np.pi, np.pi)
-    ax.plot(
-            0.303 + 0.35*np.cos(t),
-            0.35*np.sin(t))
-    print np.max(perrs[:,0])
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.grid()
-    plt.show()
+    #fig.colorbar(s, ax=ax)
+    #
+    ##ax.quiver(ps[:,0], ps[:,1],
+    ##        perrs[:,0], perrs[:,1],
+    ##        color='red',
+    ##        alpha=0.5,
+    ##        angles='xy',
+    ##        scale_units='xy',
+    ##        scale=1.0,
+    ##        )
+    #t = np.linspace(-np.pi, np.pi)
+    #ax.plot(
+    #        0.303 + 0.35*np.cos(t),
+    #        0.35*np.sin(t))
+    #print np.max(perrs[:,0])
+    #ax.set_xlabel('x')
+    #ax.set_ylabel('y')
+    #ax.grid()
+    #plt.show()
 
 
 def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):

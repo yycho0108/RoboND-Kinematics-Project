@@ -1,5 +1,5 @@
 # Created by https://www.gitignore.io/api/ros,git,vim,c++,linux,python
-
+*.csv
 ### C++ ###
 # Prerequisites
 *.d

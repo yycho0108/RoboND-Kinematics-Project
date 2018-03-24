@@ -18,13 +18,16 @@ from geometry_msgs.msg import Pose
 from mpmath import *
 from sympy import *
 from kuka_kin import KUKAKin
+import numpy as np
 
 # Note : see kuka_kin.py for the bulk of the implementation!
 
 kin = KUKAKin(build=False)
+cnt = 0
 
 def handle_calculate_IK(req):
-    global kin
+    global kin, cnt
+
     rospy.loginfo("Received %s eef-poses from the plan" % len(req.poses))
     if len(req.poses) < 1:
         print "No valid poses received"
@@ -34,6 +37,7 @@ def handle_calculate_IK(req):
 
         # Initialize service response
         joint_trajectory_list = []
+        errs = []
         for x in xrange(0, len(req.poses)):
             # IK code starts here
             joint_trajectory_point = JointTrajectoryPoint()
@@ -50,11 +54,20 @@ def handle_calculate_IK(req):
                     req.poses[x].orientation.z, req.poses[x].orientation.w])
 
             jpos = kin.IK([px,py,pz], [roll, pitch, yaw])
+            fk = kin.FK(jpos)
+
+            target = [px, py, pz, roll, pitch, yaw]
+            forward = list(fk[0]) + list(fk[1])
+            err = np.subtract(target, forward)
+            errs.append(err)
 
             # Populate response for the IK request
             # In the next line replace theta1,theta2...,theta6 by your joint angle variables
 	    joint_trajectory_point.positions = jpos
 	    joint_trajectory_list.append(joint_trajectory_point)
+
+        np.savetxt('err{}.csv'.format(cnt), np.float32(errs))
+        cnt += 1
 
         rospy.loginfo("length of Joint Trajectory List: %s" % len(joint_trajectory_list))
         return CalculateIKResponse(joint_trajectory_list)

@@ -147,3 +147,7 @@ Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics ca
 ![ik\_errors.gif](./figures/ik_errors.gif)
 
 ## Project Implementation
+
+#### Error Characterization
+
+![live\_session\_error.png](./figures/live_session_error.png)
