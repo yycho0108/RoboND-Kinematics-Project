@@ -144,9 +144,35 @@ Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics ca
 
 #### Error Characterization
 
+Based on the current system, we observe a nearly one-to-one correspondence between forward and inverse kinematics:
+
 ![ik\_errors.gif](./figures/ik_errors.gif)
 
+The small magnitude of error terms provides numerical validation that these errors are mostly due to floating-point errors, rather than logical flaw.
+
+We'll see additional confirmation to the pipeline in a later section, where we interface directly with the simulation to compute inverse kinematics.
+
+#### Workspace Characterization
+
+For completeness, I also show the positions that are considered reachable (disregarding inter-link collisions) in the current kinematics archiecture:
+
+![workspace.png](./figures/workspace.png)
+
+Accordingly, we observe that the KR210's workspace is bounded by an ellipsoid whose bounding box is *approximately* defined as follows:
+
+   | min  | max
+:-:|:----:|:----:
+x  |-3.10 |3.27
+y  |-3.15 |3.28
+z  |-2.17 |3.72
+
+Note that the above values have been estimated by a convex hull of reachable positions among 8192 sample points; the results can be replicated from running `error()` in [kuka\_kin.py](./kuka_arm/scripts/kuka_kin.py).
+
 ## Project Implementation
+
+Demo Video is available [here](https://youtu.be/C5raG8qzk70).
+
+The robot arm achieved **10/10** success rates in the trial.
 
 #### Error Characterization
 

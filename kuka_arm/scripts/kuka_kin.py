@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 """
 Handles KUKA Kinematics.
 Authored by Yoonyoung Cho @ 03.19.2018
@@ -13,6 +14,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.spatial import ConvexHull
 
 import pickle
 import cloudpickle as pickle
@@ -20,11 +22,9 @@ import cloudpickle as pickle
 
 import rospkg
 import os
-rospack = rospkg.RosPack()
-pkg_root = rospack.get_path('kuka_arm')
 
 def rmat(axis, angle):
-    """ 3x3 Rotation Matrix from Axis{x,y,z} + Angle(rad) """
+    """ 3x3 Symbolic Rotation Matrix from Axis{x,y,z} + Angle(rad) """
     c, s = cos(angle), sin(angle)
 
     if axis == 'x':
@@ -45,6 +45,12 @@ def rmat(axis, angle):
 
     raise NotImplementedError("Generalized rmat is not implemented yet!")
     return None
+
+def nrmat(a):
+    """ 2x2 Numeric Rotation Matrix about Z-Axis """
+    ca = np.cos(a)
+    sa = np.sin(a)
+    return np.reshape([ca,-sa,sa,ca], (2,2))
 
 def coslaw(a,b,c):
     """ Cosine Law """
@@ -75,7 +81,16 @@ class KUKAKin(object):
     Forward & Inverse Kinematics
     for KUKA KR210 6DOF Robot Arm.
     """
-    def __init__(self, build=True):
+    def __init__(self, build=True, fname=None):
+        """
+        Initialize Kinematics Utility;
+        If running for the first time, build must be set to True.
+        Otherwise, there is no need to re-run the computation;
+        simply set build=False to enable loading from cached routines.
+
+        Cache is, by default, built at "$(rospack find kuka_arm)/config/TF.txt".
+        If other paths are desired, simply override fname and use it consistently, including IK_server.py.
+        """
         # Variables
         self._q_fk = symbols('q1:7') # for FK
         self._q_ik = symbols('r,p,y') # for IK
@@ -84,8 +99,17 @@ class KUKAKin(object):
         self._DH = [self.getDH(i) for i in range(7)]
         self._s = self._params(self._DH)
 
-        # building takes time - build once, then load thenceforth.
-        if build:
+        # Build/Save/Load FK/IK Routines
+        if fname is None:
+            # figure out default path
+            rospack = rospkg.RosPack()
+            pkg_root = rospack.get_path('kuka_arm')
+            fname = os.path.join(pkg_root, 'config', 'TF.txt') 
+
+        self._fname = fname
+
+        if not os.path.exists(self._fname) or build:
+            # build if cache is not initialized, or forced by build=True
             T, T02, T_cor, R03, R03i, Rrpy = self._build(self._s)
             self._save(self._q_fk, self._q_ik, T, T02, T_cor, R03, R03i, Rrpy)
         T, T02, T_cor, R03, R03i, Rrpy = self._load()
@@ -97,10 +121,6 @@ class KUKAKin(object):
         self._R03i = R03i
         self._Rrpy = Rrpy
 
-        # validation
-        #M = self._T(0,0,0,0,0,0)
-        #print M[:3, 3]
-
     def _params(self, DH):
         """
         Numerical Values for DH Parameters;
@@ -110,7 +130,8 @@ class KUKAKin(object):
         alpha = angle(z_i, z_{i-1})
         follows coordinate definitions as shown in figures/coord.png
         """
-        print('Constructing Numerical DH Parameters ...')
+
+        # Define DH Parameters
         s = {}
         s.update({k:v for (k,v) in zip(DH[0], [0, 0, 0.75])}) #0-1
         s.update({k:v for (k,v) in zip(DH[1], [-pi/2, 0.35, 0])})#1-2
@@ -126,32 +147,32 @@ class KUKAKin(object):
         return s
 
     def _build(self, s):
-        # Transformation Matrix
+        """ Build Kinematics Routines """
         print('Constructing Raw Transformation Matrix ...')
         T_raw = [self.dh2T(*dh) for dh in self._DH]
         print('Substituting Constants ...')
         T_par = [T.subs(s) for T in T_raw]
 
-        def mdprint(M):
-            print ' == BEGIN == '
-            #print '|||'
-            #print ':-:|:-:|:-:|:-:'
-            print '\\begin{pmatrix}'
-            n,_ = M.shape
-            for i in range(n):
-                s = ' & '.join(['{}'.format(e) for e in M[i,:]]) + ' \\\\'
-                print s
-            print '\\end{pmatrix}'
+        #def mdprint(M):
+        #    """ Print Matrix in LaTeX-friendly format """
+        #    print ' == BEGIN == '
+        #    #print '|||'
+        #    #print ':-:|:-:|:-:|:-:'
+        #    print '\\begin{pmatrix}'
+        #    n,_ = M.shape
+        #    for i in range(n):
+        #        s = ' & '.join(['{}'.format(e) for e in M[i,:]]) + ' \\\\'
+        #        print s
+        #    print '\\end{pmatrix}'
 
-        for T in T_par:
-            mdprint(T)
+        #for T in T_par:
+        #    mdprint(T)
 
         print('Composing Homogeneous Transforms ...')
         T = reduce(lambda a,b:simplify(a*b), T_par) # full transform
         print('Applying Final Correction ...')
         T_cor = self.dh2URDF()
         T = T*T_cor
-        mdprint(T)
         T02 = T_par[0] * T_par[1] #0->2
         R03 = (T02 * T_par[2])[:3,:3]
         #R03i = simplify(R03.inv("LU"))
@@ -164,15 +185,7 @@ class KUKAKin(object):
         return T, T02, T_cor, R03, R03i, Rrpy
 
     def _save(self, syms_fk, syms_ik, T, T02, T_cor, R03, R03i, Rrpy):
-        fname = os.path.join(pkg_root, 'config', 'TF.txt') 
-
-        # TEST: arguments validation
-        #print 'Args'
-        #print T.free_symbols #q[1-6]
-        #print T02.free_symbols #q[1-2]
-        #print T_cor.free_symbols #None
-        #print R03i.free_symbols #q[1-3]
-        #print Rrpy.free_symbols #r,p,y
+        """ Save kinematics routines from _build() """
 
         # create lambda functions
         f_T = lambdify(syms_fk, T)
@@ -183,11 +196,11 @@ class KUKAKin(object):
         f_Rrpy = lambdify(syms_ik, Rrpy)
 
         # Dump
-        pickle.dump([f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy], open(fname, 'w'))
+        pickle.dump([f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy], open(self._fname, 'w'))
 
     def _load(self):
-        fname = os.path.join(pkg_root, 'config', 'TF.txt') 
-        f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy = pickle.load(open(fname, 'r'))
+        """ Load kinematics routines from _save() """
+        f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy = pickle.load(open(self._fname, 'r'))
         return f_T, f_T02, f_T_cor, f_R03, f_R03i, f_Rrpy
 
     @staticmethod
@@ -254,15 +267,10 @@ class KUKAKin(object):
         q1 = np.arctan2(wpos[1], wpos[0])
         p2 = self._T02(q1, 0.0)[:3,3]
         #p2 = self._T02.subs({'q1':q1})[:3,3]
-        # convert to float; TODO: better way?
         p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
 
         dx, dy, dz = np.subtract(wpos, p2)
 
-        def nrmat(a):
-            ca = np.cos(a)
-            sa = np.sin(a)
-            return np.reshape([ca,-sa,sa,ca], (2,2))
         # IMPORTANT : SIGNED DISTANCE
         dr = nrmat(-q1).dot([dx, dy])[0]
         # don't want to care abt projections
@@ -329,13 +337,14 @@ class KUKAKin(object):
         return q1,q2,q3,q4,q5,q6 #q4,q5,q6
 
 def hide_axis(ax):
+    """ Hide Axis (Dummy) """
     ax.spines['top'].set_color('none')
     ax.spines['bottom'].set_color('none')
     ax.spines['left'].set_color('none')
     ax.spines['right'].set_color('none')
     ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
 
-def error(kin, n=1024):
+def error(kin, n=1024, animate=False):
     """ Characterize FK-IK Errors """
     fig = plt.figure(figsize=(9.6, 4.8))
 
@@ -344,24 +353,29 @@ def error(kin, n=1024):
     ax0.set_title('IK Error Characterization')
     hide_axis(ax0)
 
+    # create axes, Layout [ 1 | 2 ]
     ax_p = fig.add_subplot(121, projection='3d')
     ax_p.set_title('Position (m) ')
     ax_q = fig.add_subplot(122, projection='3d')
     ax_q.set_title('Orientation (rad) ')
 
+    # keep track of positions, orientations, and errors
     ps = []
-    perrs = []
-
     qs = []
+    perrs = []
     qerrs = []
 
+    # also keep track of unreachable positions
+    bad_ps = []
+
+    # create new color map with alpha values from 0.1-1.0
     cm0= matplotlib.cm.get_cmap('cool')
     cm = cm0(np.arange(cm0.N))
     cm[:,-1] = np.linspace(0.1, 1, cm0.N) # minimum 0.1
     cm = ListedColormap(cm)
 
     for i in range(n):
-        p = np.random.uniform(-2.0, 2.0, size=3)
+        p = np.random.uniform(-4.0, 4.0, size=3)
         q = np.random.uniform(-np.pi, np.pi, size=3)
         q[1] = np.random.uniform(-np.pi/2, np.pi/2) # limit pitch to +-pi/2
         #q *= 0
@@ -369,6 +383,7 @@ def error(kin, n=1024):
         ik = kin.IK(p, q)
         fk = kin.FK(ik)
         if np.any(np.isnan(fk)):
+            bad_ps.append(p)
             # impossible
             continue
         perr = np.subtract(fk[0], p) # positional error, meters
@@ -380,6 +395,14 @@ def error(kin, n=1024):
         qerrs.append(qerr)
 
     ps, perrs, qs, qerrs = [np.float32(e) for e in (ps,perrs,qs,qerrs)]
+    bad_ps = np.float32(bad_ps)
+
+    hull = ConvexHull(ps)
+
+    print '== Workspace Boundary : =='
+    print 'Max(XYZ) : {}'.format(np.max(ps, axis=0))
+    print 'Min(XYZ) : {}'.format(np.min(ps, axis=0))
+    print '=========================='
 
     ax = ax_p
     c = np.linalg.norm(perrs, axis=-1)
@@ -394,18 +417,17 @@ def error(kin, n=1024):
             color='red',
             alpha=0.5,
             )
+    ax.plot_trisurf(ps[:,0],ps[:,1],ps[:,2],
+            triangles=hull.simplices, color='green',
+            alpha=0.1
+            )
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_zlabel('z')
 
     ax = ax_q
-    #c = np.linalg.norm(qerrs, axis=-1)
-    #c = np.sqrt(np.sum(np.square(qerrs), axis=-1))
-    #print np.sort(c[np.logical_not(np.isnan(c))])[-100:]
-    #print np.sort(qerrs[np.logical_not(np.isnan(qerrs))].ravel())[-100:]
+
     c = np.max(np.abs(qerrs), axis=-1)
-    print np.sort(qerrs.ravel())[-100:]
-    print np.sort(c)[-100:]
     s = ax.scatter(qs[:,0], qs[:,1], qs[:,2],
             c=c,
             cmap=cm,
@@ -421,55 +443,50 @@ def error(kin, n=1024):
     ax.set_ylabel('p')
     ax.set_zlabel('y')
 
-    #ax_q.view_init(elev=90, azim=0)
-    #ax_p.view_init(elev=90, azim=0)
+    if animate:
+        def init():
+            ax_q.view_init(azim=0)
+            ax_p.view_init(azim=0)
+            return fig,#ax_q, ax_p
 
-    def init():
-        ax_q.view_init(azim=0)
-        ax_p.view_init(azim=0)
-        return fig,#ax_q, ax_p
+        def animate(i):
+            print i
+            ax_q.view_init(azim=i)
+            ax_p.view_init(azim=i)
+            return fig,#ax_q, ax_p
 
-    def animate(i):
-        print i
-        ax_q.view_init(azim=i)
-        ax_p.view_init(azim=i)
-        return fig,#ax_q, ax_p
+        plt.draw()
+        plt.pause(0.001)
+        ani = FuncAnimation(fig, animate, init_func=init,
+                frames=range(0,360,2), interval=20, blit=False)
+        # uncomment below to save animation
+        #ani.save('ik_errors.gif', fps=20, writer='imagemagick')
+    plt.show()
 
-    plt.draw()
-    plt.pause(0.001)
-    ani = FuncAnimation(fig, animate, init_func=init,
-            frames=range(0,360,2), interval=20, blit=False)
-    #plt.show()
-    ani.save('ik_errors.gif', fps=20, writer='imagemagick')
-
-
-    #fig = plt.figure()
-    #ax = fig.add_subplot(111)
-    #c = np.linalg.norm(perrs, axis=-1)
-    #s = ax.scatter(ps[:,0], ps[:,1],
-    #        c=c,
-    #        cmap=cm#'rainbow'
-    #        )
-    #fig.colorbar(s, ax=ax)
-    #
-    ##ax.quiver(ps[:,0], ps[:,1],
-    ##        perrs[:,0], perrs[:,1],
-    ##        color='red',
-    ##        alpha=0.5,
-    ##        angles='xy',
-    ##        scale_units='xy',
-    ##        scale=1.0,
-    ##        )
-    #t = np.linspace(-np.pi, np.pi)
-    #ax.plot(
-    #        0.303 + 0.35*np.cos(t),
-    #        0.35*np.sin(t))
-    #print np.max(perrs[:,0])
-    #ax.set_xlabel('x')
-    #ax.set_ylabel('y')
-    #ax.grid()
-    #plt.show()
-
+    # also show workspace boundary
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    h_b = ax.scatter(bad_ps[:,0], bad_ps[:,1], bad_ps[:,2],
+            c='red', alpha=0.05,
+            label='bad'
+            )
+    h_g = ax.scatter(ps[:,0], ps[:,1], ps[:,2],
+            c='blue', alpha=0.1,
+            label='good'
+            )
+    h_h = ax.plot_trisurf(ps[:,0],ps[:,1],ps[:,2],
+            triangles=hull.simplices, color='green',
+            alpha=0.2,
+            label='hull'
+            )
+    h_h_fake = ax.scatter([0],[0],[0], linestyle="-", c='g', marker='o', alpha=0.2) 
+    # add fake scatter to make labels
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    ax.set_title('KR210 Workspace Characterization')
+    ax.legend([h_b, h_g, h_h_fake], ['bad','good','hull'])
+    plt.show()
 
 def test(kin, n=1024, lim=np.pi, tol=np.deg2rad(1.0)):
     np.random.seed(0)
@@ -580,7 +597,7 @@ def main():
 
     #test(kin, n=4096, lim=np.pi)
     # verified : usually ok for -pi/2 < pitch < pi/2
-    error(kin, n=1024)
+    error(kin, n=8192)
 
     #xs = []
     #ys = []

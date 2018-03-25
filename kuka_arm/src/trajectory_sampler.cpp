@@ -610,7 +610,7 @@ bool TrajectorySampler::OperateGripper(const bool &close_gripper)
 
   ros::Duration(1.5).sleep();
   bool success = ( eef_group.move() == 1 );
-  ros::Duration(3.0).sleep(); // think extra waiting time is needed for gripper to finish
+  ros::Duration(5.0).sleep(); // think extra waiting time is needed for gripper to finish
   return success;
 }
 
