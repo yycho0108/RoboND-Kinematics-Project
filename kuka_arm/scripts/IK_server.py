@@ -21,12 +21,11 @@ from kuka_kin import KUKAKin
 import numpy as np
 
 # Note : see kuka_kin.py for the bulk of the implementation!
-
 kin = KUKAKin(build=False)
-cnt = 0
+errs = []
 
 def handle_calculate_IK(req):
-    global kin, cnt
+    global kin, errs
 
     rospy.loginfo("Received %s eef-poses from the plan" % len(req.poses))
     if len(req.poses) < 1:
@@ -37,7 +36,6 @@ def handle_calculate_IK(req):
 
         # Initialize service response
         joint_trajectory_list = []
-        errs = []
         for x in xrange(0, len(req.poses)):
             # IK code starts here
             joint_trajectory_point = JointTrajectoryPoint()
@@ -66,9 +64,6 @@ def handle_calculate_IK(req):
 	    joint_trajectory_point.positions = jpos
 	    joint_trajectory_list.append(joint_trajectory_point)
 
-        np.savetxt('err{}.csv'.format(cnt), np.float32(errs))
-        cnt += 1
-
         rospy.loginfo("length of Joint Trajectory List: %s" % len(joint_trajectory_list))
         return CalculateIKResponse(joint_trajectory_list)
 
@@ -76,9 +71,19 @@ def handle_calculate_IK(req):
 def IK_server():
     # initialize node and declare calculate_ik service
     rospy.init_node('IK_server')
+    save = rospy.get_param('~save', False)
+    rospy.loginfo('Save Enabled : {}'.format(save))
     s = rospy.Service('calculate_ik', CalculateIK, handle_calculate_IK)
-    print "Ready to receive an IK request"
+    rospy.loginfo('Ready to receive an IK request')
+    rospy.on_shutdown(lambda: np.savetxt('/tmp/err.csv', np.float32(errs)) if save else None)
     rospy.spin()
+
+    #rate = rospy.Rate(100)
+    #while not rospy.is_shutdown():
+    #    rate.sleep()
+
+    #if save:
+    #    np.savetxt('err.csv', np.float32(errs))
 
 if __name__ == "__main__":
     IK_server()

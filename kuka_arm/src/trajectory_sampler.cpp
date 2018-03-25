@@ -11,6 +11,64 @@
 
 #include <kuka_arm/trajectory_sampler.h>
 
+void addCanCollisionObject(
+		moveit::planning_interface::PlanningSceneInterface& planning_scene_interface,
+		moveit::planning_interface::MoveGroupInterface& move_group,
+		float x,
+		float y,
+		float z
+		){
+
+	moveit_msgs::CollisionObject can;
+
+	can.header.frame_id = move_group.getPlanningFrame();
+	can.id = "can";
+
+	// setup primitive
+	shape_msgs::SolidPrimitive prim;
+	prim.type = prim.CYLINDER;
+
+	prim.dimensions.resize(3);
+	prim.dimensions[0] = 0.25; //height
+	prim.dimensions[1] = 0.05; //radius, see $(rospack find kuka_arm)/urdf/target.urdf.xacro
+
+	// setup pose	
+	geometry_msgs::Pose pose;
+	
+	pose.orientation.w = 1.0; //else 0
+	pose.position.x = x;
+	pose.position.y = y;
+	pose.position.z = z;
+
+	can.primitives.push_back(prim);
+	can.primitive_poses.push_back(pose);
+	can.operation = can.ADD;
+
+	std::vector<moveit_msgs::CollisionObject> objs;
+	objs.push_back(can);
+	
+	//planning_scene_interface.addCollisionObjects(objs);
+	planning_scene_interface.applyCollisionObject(can);
+}
+
+void removeCanCollisionObject(
+		moveit::planning_interface::PlanningSceneInterface& planning_scene_interface,
+		moveit::planning_interface::MoveGroupInterface& move_group
+		){
+	// option 1
+	// hopefully works?
+	moveit_msgs::CollisionObject can;
+	can.id = "can";
+	can.header.frame_id = move_group.getPlanningFrame();
+	can.operation = can.REMOVE;
+	planning_scene_interface.applyCollisionObject(can);
+	
+	// option 2 : async
+	//std::vector<std::string> objs;
+	//objs.push_back("can");
+	//planning_scene_interface.removeCollisionObjects(objs);
+}
+
 TrajectorySampler::TrajectorySampler(ros::NodeHandle nh)
   : nh_(nh),
     cycle_counter(0),
@@ -177,7 +235,17 @@ TrajectorySampler::TrajectorySampler(ros::NodeHandle nh)
     // define plan object which will hold the planned trajectory
     moveit::planning_interface::MoveGroupInterface::Plan my_plan;
 
+	// briefly add can to collision trajectory
+	addCanCollisionObject(
+			planning_scene_interface,
+			move_group,
+			target_x, target_y, target_z);
+
     bool success = ( move_group.plan(my_plan) == 1 );
+
+	// remove can from collision trajectory
+	removeCanCollisionObject(planning_scene_interface, move_group);
+		
 	//moveit::planning_interface::MoveItErrorCode success = move_group.plan(my_plan);
     ROS_INFO("Visualizing plan to target: %s",
              success ? "SUCCEEDED" : "FAILED");
@@ -539,9 +607,10 @@ bool TrajectorySampler::OperateGripper(const bool &close_gripper)
   }
 
   eef_group.setJointValueTarget(gripper_joint_positions);
-  ros::Duration(1.5).sleep();
 
+  ros::Duration(1.5).sleep();
   bool success = ( eef_group.move() == 1 );
+  ros::Duration(3.0).sleep(); // think extra waiting time is needed for gripper to finish
   return success;
 }
 

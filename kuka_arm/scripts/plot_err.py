@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -9,7 +11,7 @@ def hide_axis(ax):
     ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
 
 def main():
-    M = np.loadtxt('err1.csv')
+    M = np.loadtxt('/tmp/err.csv')
     fig = plt.figure(figsize=(12.0, 4.8))
     ax0 = fig.add_subplot(111)
     ax0.set_title('Live Session Error', y=1.05)
