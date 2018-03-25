@@ -141,6 +141,10 @@ class KUKAKin(object):
         self._R03i = R03i
         self._Rrpy = Rrpy
 
+        # remember useful numbers
+        self._a2, self._a3, self._d4, self._d6, self._d7 = \
+            [float(e.subs(self._s)) for e in symbols('a2, a3, d4, d6, d7')]
+
     def _params(self, DH):
         """
         Numerical Values for DH Parameters;
@@ -261,13 +265,15 @@ class KUKAKin(object):
             q : Joint Angles, (q1,q2,q3,q4,q5,q6)
         """
 
+        # unpack params
+        a2, a3, d4, d6, d7 = self._a2, self._a3, self._d4, self._d6, self._d7
+
         # compute wrist position ...
         r, p, y = rot
         Rrpy = self._Rrpy(r,p,y)
-        n = np.asarray(Rrpy[:, 2]).astype(np.float32) # normal-z
-        d6 = 0.0
-        l = 0.303
-        wpos = np.subtract(pos, (d6 + l)*n.reshape([3]))
+        n = np.asarray(Rrpy[:, 2]).astype(np.float32) # extract normal-z
+
+        wpos = np.subtract(pos, (d6 + d7)*n.reshape([3]))
 
         # obtain q1 from Trigonometry
         q1 = np.arctan2(wpos[1], wpos[0])
@@ -281,15 +287,15 @@ class KUKAKin(object):
         dr = nrmat(-q1).dot([dx, dy])[0]
 
         # obtain q2/q3 from cosine laws.
-        # Refer to diagram in Lecture #15 for a,b,c assignments
-        r_c = 1.25 #a2
-        r_a = np.sqrt(1.50**2 + 0.054**2) #d4
+        # Refer to [diagram](figures/q2q3.png) for a,b,c assignments
+        r_a = np.sqrt(a3**2 + d4**2)
         r_b = np.sqrt(dr*dr+dz*dz)
+        r_c = a2
 
         a = coslaw(r_b, r_c, r_a)
         b = coslaw(r_c, r_a, r_b)
         q2 = np.pi/2 - a - np.arctan2(dz, dr)
-        q3 = np.pi/2 - b - np.arctan2(0.054, 1.50) # account for angle offset
+        q3 = np.pi/2 - b + np.arctan2(a3, d4) # account for angle offset
 
         # =================================
         # Option 2 : Circular Intersections.
@@ -329,13 +335,14 @@ class KUKAKin(object):
         # [-sin(q4)*cos(q5)*cos(q6) - sin(q6)*cos(q4), sin(q4)*sin(q6)*cos(q5) - cos(q4)*cos(q6), sin(q4)*sin(q5)]
         # ])
 
-        R03i = self._R03i(q1, q2, q3)
+        # ... Rrpy = Rz(y)*Ry(p)*Rx(r)*Rc
+        R03i = self._R03i(q1, q2, q3) # inverse of R03
         R36 = np.array(np.dot(R03i, Rrpy)).astype(np.float32)
 
         # obtain q4,q5,q6 as corresponding to the above reference
         q4 = np.arctan2(R36[2,2], -R36[0,2])
-        q6 = np.arctan2(-R36[1,1], R36[1,0])
         q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
+        q6 = np.arctan2(-R36[1,1], R36[1,0])
 
         return q1,q2,q3,q4,q5,q6
 

@@ -142,6 +142,20 @@ Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics ca
 
 ##### Wrist Position
 
+In order to position the end-effector properly, we first compute the wrist position by offsetting the final position along the normal vector, as follows:
+
+![wpos.svg](./figures/wpos.svg)
+
+Here, &Delta;l is defined as the net offset, equal to `d6+d7`. In code, we obtain the wrist position like so:
+
+```python
+Rrpy = self._Rrpy(r,p,y)
+n = np.asarray(Rrpy[:, 2]).astype(np.float32) # extract normal-z
+wpos = np.subtract(pos, (d6 + d7)*n.reshape([3]))
+```
+
+Which is a direct result from the previous equation.
+
 ##### Joint 1
 
 Initially, joint 1 is rotated such that the plane of motion for the subsequent two joints contain the target position. To this end, we employ simple trigonometry:
@@ -150,13 +164,59 @@ Initially, joint 1 is rotated such that the plane of motion for the subsequent t
 
 Which translates to `q1 = np.arctan2(wpos[1], wpos[0])` ([see here](./kuka_arm/scripts/kuka_kin.py#273)).
 
-This defines O2, from which we can define the relative position of the wrist in the plane as:
+##### Joint 1 & 2
+
+Obtaining &theta;&#8321; defines the position of O&#8322;, from which we can define the relative position of the wrist in the plane as:
 
 ![q2q3.png](./figures/q2q3.png)
 
-##### Joint 1 & 2
+Solving for &theta;&#8322; and &theta;&#8323;, we obtain the following relationship:
+
+![q2q3\_eqn.svg](./figures/q2q3_eqn.svg)
+
+In implementation, this is equivalent to ([code](./kuka_arm/scripts/kuka_kin.py#281)):
+
+```python
+dr = nrmat(-q1).dot([dx, dy])[0]
+# obtain q2/q3 from cosine laws.
+# Refer to [diagram](figures/q2q3.png) for a,b,c assignments
+r_a = np.sqrt(a3**2 + d4**2)
+r_b = np.sqrt(dr*dr+dz*dz)
+r_c = a2
+
+a = coslaw(r_b, r_c, r_a)
+b = coslaw(r_c, r_a, r_b)
+q2 = np.pi/2 - a - np.arctan2(dz, dr)
+q3 = np.pi/2 - b + np.arctan2(a3, d4) # account for angle offset
+```
+
+After this, the end effector is located at the desired position, so we solve for its orientation next.
 
 #### Inverse Orientation
+
+In order to obtain the final three joint angles that map to the desired orientation, we find the rotation matrix R36 which is composed of the three parameters.
+
+To this end, we compute the final rotation matrix from the input position and orientation, and left-multiply the result with the *transpose* of the known rotation R03 based on the prior section. This is possible since the inverse of a rotation matrix is equivalent to its transpose.
+
+```python
+# ... Rrpy = Rz(y)*Ry(p)*Rx(r)*Rc
+R03i = self._R03i(q1, q2, q3) # inverse of R03
+R36 = np.array(np.dot(R03i, Rrpy)).astype(np.float32)
+```
+
+The result is the rotation matrix from O3 to O6, which is defined as follows:
+
+![r36.svg](./figures/r36.svg)
+
+Accordingly, it is straightforward to see that:
+
+```python
+q4 = np.arctan2(R36[2,2], -R36[0,2])
+q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
+q6 = np.arctan2(-R36[1,1], R36[1,0])
+```
+
+This completes the collection of joint angles required for inverse kinematics.
 
 #### Error Characterization
 
