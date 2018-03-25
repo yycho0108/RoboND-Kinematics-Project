@@ -244,7 +244,7 @@ For completeness, I also show the positions that are considered reachable (disre
 
 Accordingly, we observe that the KR210's workspace is bounded by an ellipsoid whose bounding box is *approximately* defined as follows:
 
-   |  min  |  max
+ax |  min  |  max
 :-:|:-----:|:-----:
 x  | -3.10 | 3.27
 y  | -3.15 | 3.28
