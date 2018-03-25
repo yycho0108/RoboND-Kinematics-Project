@@ -341,8 +341,8 @@ class KUKAKin(object):
 
         # obtain q4,q5,q6 as corresponding to the above reference
         q4 = np.arctan2(R36[2,2], -R36[0,2])
-        q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
         q6 = np.arctan2(-R36[1,1], R36[1,0])
+        q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
 
         return q1,q2,q3,q4,q5,q6
 

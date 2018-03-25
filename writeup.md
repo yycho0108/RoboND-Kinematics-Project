@@ -1,5 +1,13 @@
 # Project: Kinematics Pick & Place
 
+![quick\_demo.gif](./figures/quick_demo.gif)
+
+## Description
+
+This project is the second project in the Udacity Robotics Software Nanodegree Term I.
+
+In the project, we use a simulated robotic arm (KUKA KR210) to develop a simple inverse kinematics solution for a pick-and-place application.
+
 ## Kinematic Analysis
 
 I used the following frame/axes assignments in the kinematic analysis of the KUKA KR210 Robot Arm:
@@ -212,11 +220,11 @@ Accordingly, it is straightforward to see that:
 
 ```python
 q4 = np.arctan2(R36[2,2], -R36[0,2])
-q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
 q6 = np.arctan2(-R36[1,1], R36[1,0])
+q5 = np.arctan2(-R36[1,1]/np.sin(q6), R36[1,2])
 ```
 
-This completes the collection of joint angles required for inverse kinematics.
+This completes the computation of joint angles required for inverse kinematics.
 
 #### Error Characterization
 
@@ -244,12 +252,34 @@ z  |-2.17 |3.72
 
 Note that the above values have been estimated by a convex hull of reachable positions among 8192 sample points; the results can be replicated from running `characterize()` in [kuka\_kin.py](./kuka_arm/scripts/kuka_kin.py).
 
-## Project Implementation
+## Results
 
-Demo Video is available [here](https://youtu.be/C5raG8qzk70).
+![screen.png](./figures/screen.png)
 
-The robot arm achieved **10/10** success rates in the trial.
+The robot arm achieved **10/10** success rates in the trial session;
 
-#### Error Characterization
+Demo Video is available [here](https://youtu.be/C5raG8qzk70). To replicate the results:
+
+```bash
+# in separate terminals or a screen session
+roscore
+rosrun kuka_arm safe_spawner.sh
+rosrun kuka_arm IK_server.py
+```
+
+#### Live Session Error
+
+The IK server also captures the error as it processes incoming requests to compute inverse kinematics.
+
+Note that this functionality is only available when `save` flag is set while running the IK server, i.e.
+
+```
+rosrun kuka_arm IK_server.py _save:=True
+```
+
+The following plot demonstrates the error captured during the above recorded session:
 
 ![live\_session\_error.png](./figures/live_session_error.png)
+
+The order of magnitude of the error is consistent with the above results -- that is, quite low. As shown, the greatest magnitude of error was around .00001 m and .00004 radians, which is quite acceptable.
+
