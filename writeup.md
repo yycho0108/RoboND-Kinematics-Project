@@ -140,6 +140,22 @@ Given that the KR210 arm contains a *spherical wrist*, the inverse kinematics ca
 
 #### Inverse Position
 
+##### Wrist Position
+
+##### Joint 1
+
+Initially, joint 1 is rotated such that the plane of motion for the subsequent two joints contain the target position. To this end, we employ simple trigonometry:
+
+![arctan.png](./figures/arctan.png)
+
+Which translates to `q1 = np.arctan2(wpos[1], wpos[0])` ([see here](./kuka_arm/scripts/kuka_kin.py#273)).
+
+This defines O2, from which we can define the relative position of the wrist in the plane as:
+
+![q2q3.png](./figures/q2q3.png)
+
+##### Joint 1 & 2
+
 #### Inverse Orientation
 
 #### Error Characterization
