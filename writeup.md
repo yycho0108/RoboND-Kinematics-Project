@@ -166,7 +166,7 @@ x  |-3.10 |3.27
 y  |-3.15 |3.28
 z  |-2.17 |3.72
 
-Note that the above values have been estimated by a convex hull of reachable positions among 8192 sample points; the results can be replicated from running `error()` in [kuka\_kin.py](./kuka_arm/scripts/kuka_kin.py).
+Note that the above values have been estimated by a convex hull of reachable positions among 8192 sample points; the results can be replicated from running `characterize()` in [kuka\_kin.py](./kuka_arm/scripts/kuka_kin.py).
 
 ## Project Implementation
 
