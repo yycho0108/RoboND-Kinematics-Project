@@ -32,8 +32,6 @@ def handle_calculate_IK(req):
         print "No valid poses received"
         return -1
     else:
-        #kin.FK()
-
         # Initialize service response
         joint_trajectory_list = []
         for x in xrange(0, len(req.poses)):
@@ -75,15 +73,9 @@ def IK_server():
     rospy.loginfo('Save Enabled : {}'.format(save))
     s = rospy.Service('calculate_ik', CalculateIK, handle_calculate_IK)
     rospy.loginfo('Ready to receive an IK request')
+    # save errors to /tmp/err.csv, if requested
     rospy.on_shutdown(lambda: np.savetxt('/tmp/err.csv', np.float32(errs)) if save else None)
     rospy.spin()
-
-    #rate = rospy.Rate(100)
-    #while not rospy.is_shutdown():
-    #    rate.sleep()
-
-    #if save:
-    #    np.savetxt('err.csv', np.float32(errs))
 
 if __name__ == "__main__":
     IK_server()
