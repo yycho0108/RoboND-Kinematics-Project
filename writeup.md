@@ -244,11 +244,11 @@ For completeness, I also show the positions that are considered reachable (disre
 
 Accordingly, we observe that the KR210's workspace is bounded by an ellipsoid whose bounding box is *approximately* defined as follows:
 
-   | min  | max
-:-:|:----:|:----:
-x  |-3.10 |3.27
-y  |-3.15 |3.28
-z  |-2.17 |3.72
+   |  min  |  max
+:-:|:-----:|:-----:
+x  | -3.10 | 3.27
+y  | -3.15 | 3.28
+z  | -2.17 | 3.72
 
 Note that the above values have been estimated by a convex hull of reachable positions among 8192 sample points; the results can be replicated from running `characterize()` in [kuka\_kin.py](./kuka_arm/scripts/kuka_kin.py).
 
